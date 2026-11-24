@@ -71,6 +71,8 @@ import { DesktopUpdateOverlays } from './update-overlay.ts'
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { DesktopTray } from './tray.ts'
 import { DesktopBackgroundNotice } from './background-notice.ts'
+import { DesktopGpuPreference, desktopGpuSwitch, supportsDesktopGpuPreference } from './gpu-preference.ts'
+import { installDesktopGpuMenu } from './gpu-menu.ts'
 
 let focusPrimaryWindow = (): void => {}
 let stopForRecovery = async (): Promise<void> => { await stopOperationReports() }
@@ -512,6 +514,11 @@ async function main(): Promise<void> {
       throw new Error('dsh desktop: rejected IPC from an unowned renderer')
     }
     return mainWindow
+  }
+  if (process.platform === 'darwin') {
+    installDesktopGpuMenu({ preference: desktopGpuPreference, initialMode: initialGpuMode,
+      authorize: assertProductSender, locale: () => locale,
+      blocked: () => quitting || shuttingDown || !enteredWorkspace || isMandatory() || updateDialog.isOpen })
   }
   let navigation: { window: BrowserWindow; url: string; promise: Promise<void> } | undefined
   const navigateMain = (url: string): Promise<void> => {
@@ -1616,6 +1623,11 @@ async function main(): Promise<void> {
 }
 
 const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
+const desktopGpuPreference = ownsDesktopInstance && process.platform === 'darwin' && !app.runningUnderARM64Translation
+  && supportsDesktopGpuPreference(process.platform, process.arch) ? new DesktopGpuPreference(app.getPath('userData')) : undefined
+const initialGpuMode = desktopGpuPreference?.read() ?? 'automatic'
+const gpuSwitch = desktopGpuSwitch(initialGpuMode)
+if (gpuSwitch !== undefined) app.commandLine.appendSwitch(gpuSwitch)
 
 if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
